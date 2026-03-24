@@ -3,166 +3,108 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tréninkový systém 5.1 PRO</title>
+<title>Tréninkový systém ULTIMATE</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
 <style>
-body { margin:0; font-family:Arial; background:#f4f6f9; }
-header {
-  background:#1e293b; color:white; padding:10px;
-  display:flex; flex-wrap:wrap; gap:8px;
-}
-header input, header select { padding:8px; flex:1 1 120px; }
-button { padding:10px; border:none; border-radius:8px; cursor:pointer; }
-
-.layout { display:flex; flex-direction:column; }
-
-.section {
-  background:white;
-  margin:10px;
-  border-radius:12px;
-  padding:12px;
-}
-
-.exercise {
-  border:1px solid #ddd;
-  padding:12px;
-  margin-bottom:10px;
-  border-radius:10px;
-  background:#fafafa;
-}
-
-.exercise input, .exercise textarea {
-  width:100%; margin-bottom:6px; padding:8px;
-}
-
-/* FLOAT BUTTON */
-#addBtn {
-  position:fixed;
-  bottom:20px;
-  right:20px;
-  width:60px;
-  height:60px;
-  border-radius:50%;
-  font-size:24px;
-  background:#22c55e;
-  color:black;
-}
-
-/* FULLSCREEN PREVIEW */
-#previewModal {
-  position:fixed;
-  top:0; left:0;
-  width:100%; height:100%;
-  background:white;
-  display:none;
-  overflow:auto;
-  padding:20px;
-}
-
-/* DESKTOP */
-@media(min-width:768px){
-  .layout {
-    display:grid;
-    grid-template-columns:250px 1fr 300px;
-    height:calc(100vh - 60px);
-  }
-}
+body{margin:0;font-family:Arial;background:#0f172a;color:white}
+header{padding:10px;display:flex;gap:8px;flex-wrap:wrap;background:#020617}
+input,select,textarea{padding:8px;border-radius:8px;border:none;width:100%}
+button{padding:10px;border:none;border-radius:10px;background:#22c55e;color:black;font-weight:bold}
+.section{background:#111827;margin:10px;padding:12px;border-radius:12px}
+.exercise{background:#1f2937;padding:10px;margin-bottom:10px;border-radius:10px}
+#addBtn{position:fixed;bottom:20px;right:20px;width:60px;height:60px;border-radius:50%;font-size:24px}
 </style>
 </head>
-
 <body>
 
 <header>
 <input id="title" placeholder="Název TJ">
 <input type="date" id="date">
 <select id="category">
-<option>U6</option>
-<option>U7–U8</option>
-<option>U9–U10</option>
-<option>U11–U12</option>
-<option>U13–U14</option>
-<option>U15</option>
-<option>U17</option>
-<option>U19</option>
-<option>Muži</option>
+<option>U6</option><option>U7–U8</option><option>U9–U10</option>
+<option>U11–U12</option><option>U13–U14</option>
+<option>U15</option><option>U19</option><option>Muži</option>
 </select>
+<button onclick="generateAI()">🤖 AI trénink</button>
 <button onclick="exportPDF()">PDF</button>
-<button onclick="openPreview()">👁️ Náhled</button>
 </header>
 
-<div class="layout">
-
-<aside class="section">
-<h3>Cíl tréninku</h3>
+<div class="section">
+<h3>Cíl</h3>
 <textarea id="goal"></textarea>
-</aside>
+</div>
 
-<main class="section">
-<h3>Cvičení</h3>
+<div class="section">
+<h3>📚 Databáze cvičení</h3>
+<div id="db"></div>
+</div>
+
+<div class="section">
+<h3>⚽ Cvičení</h3>
 <div id="exercises"></div>
-</main>
-
 </div>
 
-<!-- FLOAT BUTTON -->
 <button id="addBtn" onclick="addExercise()">+</button>
-
-<!-- MODAL -->
-<div id="previewModal" onclick="this.style.display='none'">
-<div id="preview"></div>
-</div>
 
 <script>
 
-// SWIPE DELETE
-let touchStartX = 0;
+// 📚 ROZŠÍŘENÁ DATABÁZE
+const DB={
+ "U6":[{name:"Honěná",desc:"Zábavná hra",time:10}],
+ "U9–U10":[{name:"Rondo",desc:"Přihrávky",time:15},{name:"1v1",desc:"Souboje",time:15}],
+ "U15":[{name:"Pressing",desc:"Tlak na soupeře",time:20}]
+};
 
+// vykreslení DB
+function renderDB(){
+ const cat=category.value;
+ db.innerHTML="";
+ (DB[cat]||[]).forEach(ex=>{
+  const b=document.createElement("button");
+  b.innerText=ex.name;
+  b.onclick=()=>addExercise(ex);
+  db.appendChild(b);
+ });
+}
+category.addEventListener("change",renderDB);
+renderDB();
+
+// ➕ cvičení
 function addExercise(data={}){
  const div=document.createElement("div");
  div.className="exercise";
-
  div.innerHTML=`
  <input placeholder="Název" value="${data.name||""}">
  <textarea placeholder="Popis">${data.desc||""}</textarea>
- <input type="number" placeholder="Čas" value="${data.time||""}">
- <small>Potáhni doleva pro smazání</small>
- `;
-
- div.addEventListener("touchstart", e=>{
-  touchStartX = e.touches[0].clientX;
- });
-
- div.addEventListener("touchend", e=>{
-  let diff = touchStartX - e.changedTouches[0].clientX;
-  if(diff > 80){ div.remove(); updatePreview(); }
- });
-
+ <textarea placeholder="Poznámky"></textarea>
+ <input type="number" value="${data.time||""}">
+ <button onclick="this.parentElement.remove()">❌</button>`;
  exercises.appendChild(div);
- updatePreview();
 }
 
-function updatePreview(){
- let html=`<h2>${title.value}</h2>
- <p>${date.value} | ${category.value}</p>
- <p>${goal.value}</p><hr>`;
+// 🤖 AI GENERÁTOR (simulace)
+function generateAI(){
+ const cat=category.value;
+ exercises.innerHTML="";
 
- document.querySelectorAll(".exercise").forEach((ex,i)=>{
-  const iel=ex.querySelectorAll("input,textarea");
-  html+=`<b>${i+1}. ${iel[0].value}</b><br>${iel[1].value}<br>${iel[2].value} min<hr>`;
- });
-
- preview.innerHTML=html;
+ if(cat==="U6"){
+  goal.value="Zábava + koordinace";
+  addExercise({name:"Honička",desc:"Pohybová hra",time:10});
+ }
+ else if(cat==="U9–U10"){
+  goal.value="Technika + hra";
+  addExercise({name:"Rondo",desc:"Přihrávky",time:15});
+  addExercise({name:"1v1",desc:"Souboje",time:15});
+ }
+ else{
+  goal.value="Taktika + intenzita";
+  addExercise({name:"Pressing",desc:"Tlak",time:20});
+ }
 }
 
-document.addEventListener("input", updatePreview);
-
-function exportPDF(){ html2pdf().from(preview).save("trening.pdf"); }
-
-function openPreview(){
- updatePreview();
- previewModal.style.display="block";
-}
+// PDF
+function exportPDF(){ html2pdf().from(document.body).save("trening.pdf"); }
 
 </script>
 
