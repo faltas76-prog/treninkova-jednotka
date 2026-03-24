@@ -2,53 +2,64 @@
 <html lang="cs">
 <head>
 <meta charset="UTF-8">
-<title>Tréninkový systém 6.0</title>
+<title>Tréninkový systém 7.0</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
 <style>
-body { margin:0; font-family:Arial; background:#f4f6f9; }
+body { margin:0; font-family:Arial; background:#f1f5f9; }
 
 header {
-  background:#1e293b; color:white; padding:10px;
+  background:#0f172a; color:white; padding:10px;
   display:flex; gap:10px; flex-wrap:wrap;
 }
 
-header input, header select { padding:5px; }
+input, select, textarea { padding:6px; }
 
-button { padding:6px 10px; cursor:pointer; }
+button {
+  padding:6px 10px;
+  border:none;
+  background:#2563eb;
+  color:white;
+  border-radius:6px;
+  cursor:pointer;
+}
 
 .layout {
   display:grid;
-  grid-template-columns:250px 1fr 350px;
+  grid-template-columns:260px 1fr 350px;
   height:calc(100vh - 60px);
 }
 
-aside, main { padding:10px; overflow-y:auto; }
+aside, main {
+  padding:10px;
+  overflow:auto;
+}
 
 aside { background:#e2e8f0; }
 main { background:white; }
 
 .exercise {
-  border:1px solid #ccc;
-  padding:10px; margin-bottom:10px;
-  background:#fafafa;
+  background:#fff;
+  border-radius:10px;
+  padding:10px;
+  margin-bottom:10px;
+  box-shadow:0 2px 5px rgba(0,0,0,0.1);
 }
 
-.exercise input, .exercise textarea {
-  width:100%; margin-bottom:5px;
+canvas {
+  width:100%;
+  background:#16a34a;
+  border-radius:10px;
+  cursor:crosshair;
 }
 
-#preview { background:white; padding:10px; }
-
-.pdf-page { font-size:12px; }
-
-/* BARVY PODLE KATEGORIE */
-.U6 { border-left:5px solid #22c55e; }
-.U7 { border-left:5px solid #3b82f6; }
-.U9 { border-left:5px solid #f59e0b; }
-.U13 { border-left:5px solid #ef4444; }
+.player {
+  display:flex;
+  justify-content:space-between;
+  margin-bottom:5px;
+}
 </style>
 </head>
 
@@ -65,16 +76,12 @@ main { background:white; }
   <option>U11–U12</option>
   <option>U13–U14</option>
   <option>U15</option>
-  <option>U17</option>
   <option>U19</option>
   <option>Muži</option>
 </select>
 
-<input type="number" id="players" placeholder="Počet hráčů">
-
 <button onclick="save()">💾</button>
 <button onclick="load()">📂</button>
-<button onclick="resetAll()">🔄</button>
 <button onclick="exportPDF()">📄</button>
 </header>
 
@@ -85,8 +92,10 @@ main { background:white; }
 <h3>Cíl</h3>
 <textarea id="goal"></textarea>
 
-<h3>Délka</h3>
-<input id="duration" type="number">
+<h3>Hráči</h3>
+<input id="playerName" placeholder="Jméno hráče">
+<button onclick="addPlayer()">+ Přidat</button>
+<div id="players"></div>
 
 <h3>Databáze cvičení</h3>
 <div id="exerciseDB"></div>
@@ -94,13 +103,16 @@ main { background:white; }
 
 <!-- STŘED -->
 <main>
-<button onclick="addExercise()">+ Přidat</button>
+<button onclick="addExercise()">+ Cvičení</button>
 <div id="exercises"></div>
+
+<h3>Kreslení hřiště</h3>
+<canvas id="pitch" width="400" height="250"></canvas>
 </main>
 
 <!-- PRAVÝ PANEL -->
 <aside>
-<h3>Náhled</h3>
+<h3>Náhled PDF</h3>
 <div id="preview"></div>
 </aside>
 
@@ -108,91 +120,96 @@ main { background:white; }
 
 <script>
 
-// 📚 DATABÁZE CVIČENÍ
+// ===== DATABÁZE CVIČENÍ =====
 const DB = {
-  "U6": [
-    {name:"Honěná s míčem", desc:"Děti vedou míč a honí se", time:10},
-    {name:"Slalom", desc:"Základní vedení míče", time:10}
-  ],
-  "U7–U8": [
-    {name:"1v1", desc:"Souboje na malé branky", time:15},
-    {name:"Střelba", desc:"Zakončení po vedení míče", time:10}
-  ],
-  "U9–U10": [
-    {name:"Rondo", desc:"Přihrávky v kruhu", time:15},
-    {name:"1v1 z křídel", desc:"Útočné situace", time:15}
-  ]
+  "U6":[{name:"Honěná",desc:"Hra s míčem",time:10}],
+  "U9–U10":[{name:"Rondo",desc:"Přihrávky",time:15}]
 };
 
-// 🎯 AUTO NASTAVENÍ
-document.getElementById("category").addEventListener("change", updateCategory);
+// ===== HRÁČI =====
+let players = [];
 
-function updateCategory() {
-  const cat = document.getElementById("category").value;
-  const goal = document.getElementById("goal");
-  const duration = document.getElementById("duration");
+function addPlayer(){
+  const name = playerName.value;
+  if(!name) return;
 
-  // cíle
-  if(cat==="U6"){ goal.value="Zábava a pohyb"; duration.value=45; }
-  else if(cat==="U7–U8"){ goal.value="Základy s míčem"; duration.value=60; }
-  else if(cat==="U9–U10"){ goal.value="Technika a hra"; duration.value=75; }
-
-  renderDB();
-  updatePreview();
+  players.push({name, present:true});
+  playerName.value="";
+  renderPlayers();
 }
 
-// 📚 vykreslení databáze
-function renderDB(){
-  const cat = document.getElementById("category").value;
-  const dbDiv = document.getElementById("exerciseDB");
+function renderPlayers(){
+  const div = document.getElementById("players");
+  div.innerHTML="";
 
-  dbDiv.innerHTML="";
-
-  (DB[cat] || []).forEach(ex=>{
-    const btn = document.createElement("button");
-    btn.innerText = ex.name;
-    btn.onclick = ()=> addExercise(ex);
-    dbDiv.appendChild(btn);
+  players.forEach((p,i)=>{
+    const el = document.createElement("div");
+    el.className="player";
+    el.innerHTML = `
+      ${p.name}
+      <input type="checkbox" ${p.present?"checked":""}
+      onchange="players[${i}].present=this.checked">
+    `;
+    div.appendChild(el);
   });
 }
 
-// ➕ přidání cvičení
-function addExercise(data = {}){
+// ===== CVIČENÍ =====
+function addExercise(data={}){
   const div = document.createElement("div");
-  div.className = "exercise";
+  div.className="exercise";
 
-  div.innerHTML = `
-    <input value="${data.name||''}" placeholder="Název">
+  div.innerHTML=`
+    <input placeholder="Název" value="${data.name||''}">
     <textarea>${data.desc||''}</textarea>
     <input type="number" value="${data.time||''}">
-    <label><input type="checkbox"> Splněno</label>
-    <button onclick="this.parentElement.remove(); updatePreview()">❌</button>
+    <button onclick="this.parentElement.remove();updatePreview()">❌</button>
   `;
 
-  document.getElementById("exercises").appendChild(div);
+  exercises.appendChild(div);
   updatePreview();
 }
 
-// 👁️ preview
+// ===== KRESLENÍ =====
+const canvas = document.getElementById("pitch");
+const ctx = canvas.getContext("2d");
+
+let drawing=false;
+
+canvas.addEventListener("mousedown", ()=> drawing=true);
+canvas.addEventListener("mouseup", ()=> drawing=false);
+
+canvas.addEventListener("mousemove", e=>{
+  if(!drawing) return;
+
+  ctx.fillStyle="white";
+  ctx.beginPath();
+  ctx.arc(e.offsetX,e.offsetY,3,0,Math.PI*2);
+  ctx.fill();
+});
+
+// ===== PREVIEW =====
 function updatePreview(){
   let html = `
-    <div class="pdf-page">
-      <h2>${title.value}</h2>
-      <p>${date.value} | ${category.value}</p>
-      <p><b>Cíl:</b> ${goal.value}</p>
-      <p><b>Délka:</b> ${duration.value} min</p>
-      <hr>
+    <h2>${title.value}</h2>
+    <p>${date.value} | ${category.value}</p>
+    <p>${goal.value}</p>
+    <hr>
   `;
 
   document.querySelectorAll(".exercise").forEach((ex,i)=>{
     const inputs = ex.querySelectorAll("input, textarea");
 
-    html += `
+    html+=`
       <p><b>${i+1}. ${inputs[0].value}</b></p>
       <p>${inputs[1].value}</p>
       <p>${inputs[2].value} min</p>
-      <hr>
     `;
+  });
+
+  html+=`<hr><b>Docházka:</b><br>`;
+  players.forEach(p=>{
+    html+=`${p.name} - ${p.present?"✔":"✖"}<br>`;
   });
 
   preview.innerHTML = html;
@@ -200,29 +217,47 @@ function updatePreview(){
 
 document.addEventListener("input", updatePreview);
 
-// 📄 PDF
+// ===== PDF =====
 function exportPDF(){
   html2pdf().from(preview).save("trening.pdf");
 }
 
-// 💾 SAVE/LOAD
+// ===== SAVE/LOAD =====
 function save(){
-  localStorage.setItem("training", document.body.innerHTML);
+  const data = {
+    title:title.value,
+    date:date.value,
+    category:category.value,
+    goal:goal.value,
+    players,
+    exercises:[...document.querySelectorAll(".exercise")].map(ex=>{
+      const i=ex.querySelectorAll("input,textarea");
+      return {name:i[0].value,desc:i[1].value,time:i[2].value};
+    })
+  };
+
+  localStorage.setItem("training", JSON.stringify(data));
   alert("Uloženo");
 }
 
 function load(){
-  const data = localStorage.getItem("training");
-  if(data){ document.body.innerHTML = data; }
+  const data = JSON.parse(localStorage.getItem("training"));
+  if(!data) return;
+
+  title.value=data.title;
+  date.value=data.date;
+  category.value=data.category;
+  goal.value=data.goal;
+
+  players=data.players||[];
+  renderPlayers();
+
+  exercises.innerHTML="";
+  data.exercises.forEach(addExercise);
 }
 
-function resetAll(){
-  localStorage.clear();
-  location.reload();
-}
-
-// init
-updateCategory();
+// INIT
+updatePreview();
 
 </script>
 
