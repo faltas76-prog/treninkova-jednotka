@@ -3,17 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tréninkový systém ULTIMATE</title>
+<title>Tréninkový systém AI PRO+ (kreslení PRO)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
 <style>
 body{margin:0;font-family:Arial;background:#0f172a;color:white}
 header{padding:10px;display:flex;gap:8px;flex-wrap:wrap;background:#020617}
 input,select,textarea{padding:8px;border-radius:8px;border:none;width:100%}
-button{padding:10px;border:none;border-radius:10px;background:#22c55e;color:black;font-weight:bold}
+button{padding:10px;border:none;border-radius:10px;background:#22c55e;color:black;font-weight:bold;cursor:pointer}
 .section{background:#111827;margin:10px;padding:12px;border-radius:12px}
 .exercise{background:#1f2937;padding:10px;margin-bottom:10px;border-radius:10px}
 #addBtn{position:fixed;bottom:20px;right:20px;width:60px;height:60px;border-radius:50%;font-size:24px}
+canvas{background:#16a34a;width:100%;border-radius:10px;touch-action:none}
 </style>
 </head>
 <body>
@@ -22,11 +23,19 @@ button{padding:10px;border:none;border-radius:10px;background:#22c55e;color:blac
 <input id="title" placeholder="Název TJ">
 <input type="date" id="date">
 <select id="category">
-<option>U6</option><option>U7–U8</option><option>U9–U10</option>
-<option>U11–U12</option><option>U13–U14</option>
-<option>U15</option><option>U19</option><option>Muži</option>
+<option>U6</option>
+<option>U7–U8</option>
+<option>U9–U10</option>
+<option>U11–U12</option>
+<option>U13–U14</option>
+<option>U15</option>
+<option>U17</option>
+<option>U19</option>
+<option>Muži</option>
 </select>
-<button onclick="generateAI()">🤖 AI trénink</button>
+<button onclick="generateAI()">🤖 AI</button>
+<button onclick="saveCustom()">💾 uložit</button>
+<button onclick="loadCustom()">📂 načíst</button>
 <button onclick="exportPDF()">PDF</button>
 </header>
 
@@ -36,39 +45,22 @@ button{padding:10px;border:none;border-radius:10px;background:#22c55e;color:blac
 </div>
 
 <div class="section">
-<h3>📚 Databáze cvičení</h3>
-<div id="db"></div>
+<h3>⚽ Cvičení</h3>
+<div id="exercises"></div>
 </div>
 
 <div class="section">
-<h3>⚽ Cvičení</h3>
-<div id="exercises"></div>
+<h3>🎯 Kreslení PRO</h3>
+<button onclick="mode='draw'">✏️ kreslit</button>
+<button onclick="mode='player'">⚽ hráč</button>
+<button onclick="mode='arrow'">➡️ šipka</button>
+<canvas id="pitch"></canvas>
+<button onclick="clearCanvas()">Vymazat</button>
 </div>
 
 <button id="addBtn" onclick="addExercise()">+</button>
 
 <script>
-
-// 📚 ROZŠÍŘENÁ DATABÁZE
-const DB={
- "U6":[{name:"Honěná",desc:"Zábavná hra",time:10}],
- "U9–U10":[{name:"Rondo",desc:"Přihrávky",time:15},{name:"1v1",desc:"Souboje",time:15}],
- "U15":[{name:"Pressing",desc:"Tlak na soupeře",time:20}]
-};
-
-// vykreslení DB
-function renderDB(){
- const cat=category.value;
- db.innerHTML="";
- (DB[cat]||[]).forEach(ex=>{
-  const b=document.createElement("button");
-  b.innerText=ex.name;
-  b.onclick=()=>addExercise(ex);
-  db.appendChild(b);
- });
-}
-category.addEventListener("change",renderDB);
-renderDB();
 
 // ➕ cvičení
 function addExercise(data={}){
@@ -83,25 +75,142 @@ function addExercise(data={}){
  exercises.appendChild(div);
 }
 
-// 🤖 AI GENERÁTOR (simulace)
-function generateAI(){
- const cat=category.value;
+// 🤖 AI
+async function generateAI(){
+ const res = await fetch("/generateTraining",{
+  method:"POST",
+  headers:{"Content-Type":"application/json"},
+  body: JSON.stringify({category:category.value})
+ });
+ const data = await res.json();
  exercises.innerHTML="";
+ goal.value=data.goal;
+ data.exercises.forEach(addExercise);
+}
 
- if(cat==="U6"){
-  goal.value="Zábava + koordinace";
-  addExercise({name:"Honička",desc:"Pohybová hra",time:10});
- }
- else if(cat==="U9–U10"){
-  goal.value="Technika + hra";
-  addExercise({name:"Rondo",desc:"Přihrávky",time:15});
-  addExercise({name:"1v1",desc:"Souboje",time:15});
- }
- else{
-  goal.value="Taktika + intenzita";
-  addExercise({name:"Pressing",desc:"Tlak",time:20});
+// 💾 vlastní
+function saveCustom(){
+ let list=JSON.parse(localStorage.getItem("customTrainings")||"[]");
+ list.push(getData());
+ localStorage.setItem("customTrainings",JSON.stringify(list));
+ alert("Uloženo");
+}
+
+function loadCustom(){
+ let list=JSON.parse(localStorage.getItem("customTrainings")||"[]");
+ if(!list.length) return alert("Nic uloženého");
+ let i=prompt("Vyber index (1-"+list.length+")");
+ if(list[i-1]) applyData(list[i-1]);
+}
+
+function getData(){
+ return {
+  goal:goal.value,
+  exercises:[...document.querySelectorAll(".exercise")].map(ex=>{
+   const i=ex.querySelectorAll("input,textarea");
+   return {name:i[0].value,desc:i[1].value,time:i[3].value};
+  })
+ };
+}
+
+function applyData(d){
+ exercises.innerHTML="";
+ goal.value=d.goal;
+ d.exercises.forEach(addExercise);
+}
+
+// 🎯 KRESLENÍ PRO
+const canvas=document.getElementById("pitch");
+const ctx=canvas.getContext("2d");
+let mode='draw';
+let drawing=false;
+let startX=0,startY=0;
+
+function resize(){
+ const rect=canvas.getBoundingClientRect();
+ const scale=window.devicePixelRatio||1;
+ canvas.width=rect.width*scale;
+ canvas.height=rect.height*scale;
+ ctx.scale(scale,scale);
+}
+resize();
+
+function pos(e){
+ const r=canvas.getBoundingClientRect();
+ return e.touches ? {
+  x:e.touches[0].clientX-r.left,
+  y:e.touches[0].clientY-r.top
+ } : {x:e.clientX-r.left,y:e.clientY-r.top};
+}
+
+canvas.addEventListener("mousedown",start);
+canvas.addEventListener("touchstart",start);
+canvas.addEventListener("mouseup",end);
+canvas.addEventListener("touchend",end);
+canvas.addEventListener("mousemove",move);
+canvas.addEventListener("touchmove",move);
+
+function start(e){
+ const p=pos(e);
+ startX=p.x; startY=p.y;
+ drawing=true;
+ if(mode==='player'){
+  drawPlayer(p.x,p.y);
  }
 }
+
+function end(e){
+ if(mode==='arrow' && drawing){
+  const p=pos(e);
+  drawArrow(startX,startY,p.x,p.y);
+ }
+ drawing=false;
+ ctx.beginPath();
+}
+
+function move(e){
+ if(!drawing) return;
+ const p=pos(e);
+
+ if(mode==='draw'){
+  ctx.lineWidth=2;
+  ctx.lineCap='round';
+  ctx.strokeStyle='white';
+  ctx.lineTo(p.x,p.y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(p.x,p.y);
+ }
+ e.preventDefault();
+}
+
+function drawPlayer(x,y){
+ ctx.fillStyle='blue';
+ ctx.beginPath();
+ ctx.arc(x,y,8,0,Math.PI*2);
+ ctx.fill();
+}
+
+function drawArrow(x1,y1,x2,y2){
+ ctx.strokeStyle='white';
+ ctx.lineWidth=2;
+ ctx.beginPath();
+ ctx.moveTo(x1,y1);
+ ctx.lineTo(x2,y2);
+ ctx.stroke();
+
+ // šipka
+ const angle=Math.atan2(y2-y1,x2-x1);
+ ctx.beginPath();
+ ctx.moveTo(x2,y2);
+ ctx.lineTo(x2-10*Math.cos(angle-0.3),y2-10*Math.sin(angle-0.3));
+ ctx.lineTo(x2-10*Math.cos(angle+0.3),y2-10*Math.sin(angle+0.3));
+ ctx.closePath();
+ ctx.fillStyle='white';
+ ctx.fill();
+}
+
+function clearCanvas(){ ctx.clearRect(0,0,canvas.width,canvas.height); }
 
 // PDF
 function exportPDF(){ html2pdf().from(document.body).save("trening.pdf"); }
